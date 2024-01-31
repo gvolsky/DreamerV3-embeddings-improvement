@@ -161,9 +161,15 @@ class WorldModel(nj.Module):
       out = head(feats if name in self.config.grad_heads else sg(feats))
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
+    idxs = None
     losses = {}
+    if self.config.rep_loss.impl == 'bisim':
+      key = jax.random.PRNGKey(self.config.seed)
+      idxs = jax.random.permutation(key, self.config.batch_size)
+      losses['embed_diff'] = jnp.mean(jaxutils.huber_loss(embed, embed[idxs]), axis=-1)
+      losses['reward_diff'] = jaxutils.huber_loss(data['reward'], data['reward'][idxs])
     losses['dyn'] = self.rssm.dyn_loss(post, prior, **self.config.dyn_loss)
-    losses['rep'] = self.rssm.rep_loss(post, prior, **self.config.rep_loss)
+    losses['rep'] = self.rssm.rep_loss(post, prior, idxs, **self.config.rep_loss)
     for key, dist in dists.items():
       loss = -dist.log_prob(data[key].astype(jnp.float32))
       assert loss.shape == embed.shape[:2], (key, loss.shape)

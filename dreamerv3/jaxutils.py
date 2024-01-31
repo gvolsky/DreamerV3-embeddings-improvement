@@ -474,3 +474,22 @@ class SlowUpdater:
         lambda s, d: mix * s + (1 - mix) * d,
         source, self.dst.getm()))
     self.updates.write(updates + 1)
+
+
+def huber_loss(target: float, pred: float, delta: float = 1.0) -> float:
+  """Huber loss.
+
+  Args:
+    target: ground truth
+    pred: predictions
+    delta: radius of quadratic behavior
+  Returns:
+    loss value
+
+  References:
+    https://en.wikipedia.org/wiki/Huber_loss
+  """
+  abs_diff = jnp.abs(target - pred)
+  return jnp.where(abs_diff > delta,
+                   delta * (abs_diff - .5 * delta),
+                   0.5 * abs_diff ** 2)

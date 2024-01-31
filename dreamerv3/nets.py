@@ -71,10 +71,15 @@ class RSSM(nj.Module):
     prior = {k: swap(v) for k, v in prior.items()}
     return prior
 
-  def get_dist(self, state, argmax=False):
+  def get_dist(self, state, idxs=None, get_mean=False, get_argmax=False):
     if self._classes:
-      logit = state['logit'].astype(f32)
-      return tfd.Independent(jaxutils.OneHotDist(logit), 1)
+      if get_mean:
+        logit1 = state['logit'].astype(f32)
+        logit2 = state['logit'][idxs].astype(f32)
+        return tfd.Independent(jaxutils.OneHotDist(0.5 * (logit1 + logit2)), 1)
+      else:
+        logit = state['logit'].astype(f32)
+        return tfd.Independent(jaxutils.OneHotDist(logit), 1)
     else:
       mean = state['mean'].astype(f32)
       std = state['std'].astype(f32)
@@ -170,7 +175,7 @@ class RSSM(nj.Module):
       loss = jnp.maximum(loss, free)
     return loss
 
-  def rep_loss(self, post, prior, impl='kl', free=1.0):
+  def rep_loss(self, post, prior, idxs=None, impl='kl', free=1.0):
     if impl == 'kl':
       loss = self.get_dist(post).kl_divergence(self.get_dist(sg(prior)))
     elif impl == 'uniform':
@@ -178,6 +183,10 @@ class RSSM(nj.Module):
       loss = self.get_dist(post).kl_divergence(self.get_dist(uniform))
     elif impl == 'entropy':
       loss = -self.get_dist(post).entropy()
+    elif impl == 'bisim':
+      p1, p2 = self.get_dist(prior), self.get_dist(prior, idxs)
+      m = self.get_dist(prior, idxs, get_mean=True)
+      loss = 0.5 * (p1.kl_divergence(m) + p2.kl_divergence(m))
     elif impl == 'none':
       loss = jnp.zeros(post['deter'].shape[:-1])
     else:
