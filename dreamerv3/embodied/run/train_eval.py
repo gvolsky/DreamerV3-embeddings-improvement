@@ -3,6 +3,8 @@ import re
 import embodied
 import numpy as np
 
+import gc
+
 
 def train_eval(
     agent, train_env, eval_env, train_replay, eval_replay, logger, args):
@@ -29,14 +31,14 @@ def train_eval(
     timer.wrap('replay', train_replay, ['_sample'])
 
   nonzeros = set()
-  def per_episode(ep, mode):
+  def per_episode(ep, mode, episode=None):
     length = len(ep['reward']) - 1
     score = float(ep['reward'].astype(np.float64).sum())
     logger.add({
         'length': length, 'score': score,
         'reward_rate': (ep['reward'] - ep['reward'].min() >= 0.1).mean(),
-    }, prefix=('episode' if mode == 'train' else f'{mode}_episode'))
-    print(f'Episode has {length} steps and return {score:.1f}.')
+    }, prefix=('episode' if mode == 'train' else f'{mode}_{episode}_episode'))
+    print(f'{mode} {episode} episode has {length} steps and return {score:.1f}.')
     stats = {}
     for key in args.log_keys_video:
       if key in ep:
@@ -54,12 +56,12 @@ def train_eval(
     metrics.add(stats, prefix=f'{mode}_stats')
 
   driver_train = embodied.Driver(train_env)
-  driver_train.on_episode(lambda ep, worker: per_episode(ep, mode='train'))
+  driver_train.on_episode(lambda ep, worker, episode: per_episode(ep, episode=episode, mode='train'))
   driver_train.on_step(lambda tran, _: step.increment())
   driver_train.on_step(train_replay.add)
   driver_eval = embodied.Driver(eval_env)
   driver_eval.on_step(eval_replay.add)
-  driver_eval.on_episode(lambda ep, worker: per_episode(ep, mode='eval'))
+  driver_eval.on_episode(lambda ep, worker, episode: per_episode(ep, episode=episode, mode='eval'))
 
   random_agent = embodied.RandomAgent(train_env.act_space)
   print('Prefill train dataset.')
@@ -117,7 +119,10 @@ def train_eval(
       print('Starting evaluation at step', int(step))
       driver_eval.reset()
       driver_eval(policy_eval, episodes=max(len(eval_env), args.eval_eps))
+      gc.collect()
+      print('Finish evaluation at step', int(step))
     driver_train(policy_train, steps=100)
+    gc.collect()
     if should_save(step):
       checkpoint.save()
   logger.write()

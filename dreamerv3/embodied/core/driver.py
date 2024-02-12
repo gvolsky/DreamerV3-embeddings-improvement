@@ -68,7 +68,7 @@ class Driver:
       for i, done in enumerate(obs['is_last']):
         if done:
           ep = {k: convert(v) for k, v in self._eps[i].items()}
-          [fn(ep.copy(), i, **self._kwargs) for fn in self._on_episodes]
+          [fn(ep.copy(), i, episode=episode, **self._kwargs) for fn in self._on_episodes]
           episode += 1
     return step, episode
 
