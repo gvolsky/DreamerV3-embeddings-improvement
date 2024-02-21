@@ -52,7 +52,7 @@ defaults:
     atari: {size: [64, 64], repeat: 4, sticky: True, gray: False, actions: all, lives: unused, noops: 0, resize: opencv}
     dmlab: {size: [64, 64], repeat: 4, episodic: True}
     minecraft: {size: [64, 64], break_speed: 100.0}
-    dmc: {size: [64, 64], repeat: 2, camera: -1}
+    dmc: {size: [64, 64], repeat: 2, camera: -1, background: None, total_frames: 1000, grayscale: False}
     loconav: {size: [64, 64], repeat: 2, camera: -1}
 
   # Agent

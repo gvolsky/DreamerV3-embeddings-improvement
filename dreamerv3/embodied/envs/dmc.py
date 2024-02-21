@@ -1,4 +1,5 @@
 import functools
+import glob
 import os
 
 import embodied
@@ -12,7 +13,17 @@ class DMC(embodied.Env):
       quadruped=2,
   )
 
-  def __init__(self, env, repeat=1, render=True, size=(64, 64), camera=-1):
+  def __init__(
+      self, 
+      env, 
+      repeat=1, 
+      render=True, 
+      size=(64, 64), 
+      camera=-1, 
+      background=None, 
+      total_frames=1000,
+      grayscale=False
+      ):
     # TODO: This env variable is meant for headless GPU machines but may fail
     # on CPU-only machines.
     if 'MUJOCO_GL' not in os.environ:
@@ -41,6 +52,15 @@ class DMC(embodied.Env):
     self._size = size
     self._camera = camera
 
+    if background:
+      files = glob.glob(os.path.expanduser(background))
+      assert len(files), "Pattern {} does not match any files".format(background)
+      self._bg = embodied.background.RandomVideoSource(
+        size, files, grayscale=grayscale, total_frames=total_frames
+        )
+    else:
+      self._bg = None
+
   @functools.cached_property
   def obs_space(self):
     spaces = self._env.obs_space.copy()
@@ -62,4 +82,9 @@ class DMC(embodied.Env):
     return obs
 
   def render(self):
-    return self._dmenv.physics.render(*self._size, camera_id=self._camera)
+    img = self._dmenv.physics.render(*self._size, camera_id=self._camera)
+    if self._bg is not None:
+      mask = np.logical_and((img[:, :, 2] > img[:, :, 1]), (img[:, :, 2] > img[:, :, 0]))  # hardcoded for dmc
+      bg = self._bg.get_image()
+      img[mask] = bg[mask]
+    return img
