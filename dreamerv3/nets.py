@@ -77,6 +77,9 @@ class RSSM(nj.Module):
         logit1 = state['logit'].astype(f32)
         logit2 = state['logit'][idxs].astype(f32)
         return tfd.Independent(jaxutils.OneHotDist(0.5 * (logit1 + logit2)), 1)
+      elif idxs is not None:
+        logit = state['logit'][idxs].astype(f32)
+        return tfd.Independent(jaxutils.OneHotDist(logit), 1)
       else:
         logit = state['logit'].astype(f32)
         return tfd.Independent(jaxutils.OneHotDist(logit), 1)
