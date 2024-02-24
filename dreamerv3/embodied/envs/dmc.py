@@ -73,6 +73,10 @@ class DMC(embodied.Env):
     return self._env.act_space
 
   def step(self, action):
+    if action['reset'] and self._bg:
+      self._bg.build_arr()
+      self._bg.current_idx = 0
+      self._bg.reset()
     for key, space in self.act_space.items():
       if not space.discrete:
         assert np.isfinite(action[key]).all(), (key, action[key])

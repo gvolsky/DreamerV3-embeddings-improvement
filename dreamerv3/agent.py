@@ -153,8 +153,7 @@ class WorldModel(nj.Module):
     prev_latent, prev_action = state
     prev_actions = jnp.concatenate([
         prev_action[:, None], data['action'][:, :-1]], 1)
-    post, prior = self.rssm.observe(
-        embed, prev_actions, data['is_first'], prev_latent)
+    post, prior = self.rssm.observe(embed, prev_actions, data['is_first'], prev_latent)
     dists = {}
     feats = {**post, 'embed': embed}
     for name, head in self.heads.items():
@@ -163,12 +162,24 @@ class WorldModel(nj.Module):
       dists.update(out)
     idxs, reward, hstate = None, None, None
     losses = {}
-    if self.config.rep_loss.impl == 'bisim':
+    if self.config.enc_loss.impl == 'bisim':
       key = jax.random.PRNGKey(self.config.seed)
       idxs = jax.random.permutation(key, self.config.batch_size)
       reward, hstate = data['reward'], embed
+      mean, std = prior['mean'], prior['std']
+      z_dist = jnp.mean(jnp.abs(hstate - sg(hstate[idxs])), axis=-1) * \
+        jnp.power(self.config.enc_loss.disc, jnp.arange(hstate.shape[1], dtype=jnp.float32))
+      r_dist = jnp.abs(reward - sg(reward[idxs])) * \
+        jnp.power(self.config.enc_loss.disc, jnp.arange(reward.shape[1], dtype=jnp.float32))
+      t_dist = jnp.mean(jnp.sqrt(
+        jnp.square(sg(mean[idxs]) - sg(mean)) + jnp.square(sg(std[idxs]) - sg(std))
+      ), axis=-1) * jnp.power(
+        self.config.enc_loss.disc, jnp.arange(prior['mean'].shape[1], dtype=jnp.float32)
+      )
+      bisim = r_dist + self.config.enc_loss.disc * t_dist
+      losses['enc'] = jnp.mean(jnp.square(z_dist - bisim))
     losses['dyn'] = self.rssm.dyn_loss(post, prior, **self.config.dyn_loss)
-    losses['rep'] = self.rssm.rep_loss(post, prior, idxs, reward, hstate, **self.config.rep_loss)
+    losses['rep'] = self.rssm.rep_loss(post, prior, **self.config.rep_loss)
     for key, dist in dists.items():
       loss = -dist.log_prob(data[key].astype(jnp.float32))
       assert loss.shape == embed.shape[:2], (key, loss.shape)

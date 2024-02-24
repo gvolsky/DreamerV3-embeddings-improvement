@@ -56,6 +56,8 @@ class RandomVideoSource(ImageSource):
       shape: [h, w]
       filelist: a list of video files
     """
+    np.random.seed(0)
+    random.seed(0)
     self.grayscale = grayscale
     self.total_frames = total_frames
     self.shape = shape
@@ -69,10 +71,10 @@ class RandomVideoSource(ImageSource):
       self.total_frames = 0
       self.arr = None
       random.shuffle(self.filelist)
-      for fname in tqdm.tqdm(self.filelist, desc="Loading videos for natural", position=0):
+      for fname in self.filelist:
         frames = read_video(fname, self.grayscale)
         local_arr = np.zeros((frames.shape[0], self.shape[0], self.shape[1]) + ((3,) if not self.grayscale else (1,)))
-        for i in tqdm.tqdm(range(frames.shape[0]), desc="video frames", position=1):
+        for i in range(frames.shape[0]):
           local_arr[i] = cv2.resize(frames[i], (self.shape[1], self.shape[0]))
         if self.arr is None:
           self.arr = local_arr
@@ -83,23 +85,20 @@ class RandomVideoSource(ImageSource):
       self.arr = np.zeros((self.total_frames, self.shape[0], self.shape[1]) + ((3,) if not self.grayscale else (1,)))
       total_frame_i = 0
       file_i = 0
-      with tqdm.tqdm(total=self.total_frames, desc="Loading videos for natural") as pbar:
-        while total_frame_i < self.total_frames:
-          if file_i % len(self.filelist) == 0: 
-            random.shuffle(self.filelist)
-          file_i += 1
-          fname = self.filelist[file_i % len(self.filelist)]
-          pbar.write(f'Video: {fname}')
-          frames = read_video(fname, self.grayscale)
-          for frame_i in range(frames.shape[0]):
-            if total_frame_i >= self.total_frames: 
-              break
-            if self.grayscale:
-              self.arr[total_frame_i] = cv2.resize(frames[frame_i], (self.shape[1], self.shape[0]))[..., None]
-            else:
-              self.arr[total_frame_i] = cv2.resize(frames[frame_i], (self.shape[1], self.shape[0])) 
-            pbar.update(1)
-            total_frame_i += 1
+      while total_frame_i < self.total_frames:
+        if file_i % len(self.filelist) == 0: 
+          random.shuffle(self.filelist)
+        file_i += 1
+        fname = self.filelist[file_i % len(self.filelist)]
+        frames = read_video(fname, self.grayscale)
+        for frame_i in range(frames.shape[0]):
+          if total_frame_i >= self.total_frames: 
+            break
+          if self.grayscale:
+            self.arr[total_frame_i] = cv2.resize(frames[frame_i], (self.shape[1], self.shape[0]))[..., None]
+          else:
+            self.arr[total_frame_i] = cv2.resize(frames[frame_i], (self.shape[1], self.shape[0])) 
+          total_frame_i += 1
 
   def reset(self):
     self._loc = np.random.randint(0, self.total_frames)

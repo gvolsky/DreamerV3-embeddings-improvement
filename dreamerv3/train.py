@@ -40,10 +40,6 @@ def main(argv=None):
   config.save(logdir / 'config.yaml')
   step = embodied.Counter()
   logger = make_logger(parsed, logdir, step, config)
-  
-  np.random.seed(config.seed)
-  random.seed(config.seed)
-
   cleanup = []
   try:
 

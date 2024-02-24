@@ -178,9 +178,7 @@ class RSSM(nj.Module):
       loss = jnp.maximum(loss, free)
     return loss
 
-  def rep_loss(
-      self, post, prior, idxs=None, reward=None, hstate=None, impl='kl', free=1.0, disc=0.99
-    ):
+  def rep_loss(self, post, prior, impl='kl', free=1.0):
     if impl == 'kl':
       loss = self.get_dist(post).kl_divergence(self.get_dist(sg(prior)))
     elif impl == 'uniform':
@@ -188,25 +186,6 @@ class RSSM(nj.Module):
       loss = self.get_dist(post).kl_divergence(self.get_dist(uniform))
     elif impl == 'entropy':
       loss = -self.get_dist(post).entropy()
-    elif impl == 'bisim':
-      if self._classes:
-        embed_diff = jnp.mean(jaxutils.huber_loss(hstate, hstate[idxs]), axis=-1)
-        reward_diff = jaxutils.huber_loss(reward, reward[idxs])
-        p1, p2 = self.get_dist(prior), self.get_dist(prior, idxs)
-        m = sg(self.get_dist(prior, idxs, get_mean=True))
-        bisim = reward_diff + disc * 0.5 * (p1.kl_divergence(m) + p2.kl_divergence(m))
-        loss = jnp.mean((embed_diff - bisim) ** 2)
-      else:
-        embed_diff = jnp.mean(jaxutils.huber_loss(hstate, hstate[idxs]), axis=-1)
-        reward_diff = jaxutils.huber_loss(reward, reward[idxs])
-        next_std_2, next_mean_2 = prior['std'][idxs], prior['mean'][idxs]
-        trans_dist = jnp.sqrt(
-          (next_mean_2 - sg(prior['mean'])) ** 2 + 
-          (next_std_2 - sg(prior['std'])) ** 2
-        )
-        bisim = reward_diff + disc * jnp.mean(trans_dist, axis=-1)
-        loss = jnp.mean((embed_diff - bisim) ** 2)
-
     elif impl == 'none':
       loss = jnp.zeros(post['deter'].shape[:-1])
     else:
