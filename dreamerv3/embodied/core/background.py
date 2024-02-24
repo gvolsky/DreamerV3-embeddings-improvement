@@ -89,6 +89,7 @@ class RandomVideoSource(ImageSource):
             random.shuffle(self.filelist)
           file_i += 1
           fname = self.filelist[file_i % len(self.filelist)]
+          pbar.write(f'Video: {fname}')
           frames = read_video(fname, self.grayscale)
           for frame_i in range(frames.shape[0]):
             if total_frame_i >= self.total_frames: 
