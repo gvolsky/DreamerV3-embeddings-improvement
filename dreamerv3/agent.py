@@ -160,22 +160,19 @@ class WorldModel(nj.Module):
       out = head(feats if name in self.config.grad_heads else sg(feats))
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
-    idxs, reward, hstate = None, None, None
     losses = {}
     if self.config.enc_loss.impl == 'bisim':
       key = jax.random.PRNGKey(self.config.seed)
       idxs = jax.random.permutation(key, self.config.batch_size)
-      reward, hstate = data['reward'], embed
-      mean, std = prior['mean'], prior['std']
-      z_dist = jnp.mean(jnp.abs(hstate - sg(hstate[idxs])), axis=-1) * \
-        jnp.power(self.config.enc_loss.disc, jnp.arange(hstate.shape[1], dtype=jnp.float32))
-      r_dist = jnp.abs(reward - sg(reward[idxs])) * \
-        jnp.power(self.config.enc_loss.disc, jnp.arange(reward.shape[1], dtype=jnp.float32))
+      mean, std, reward = prior['mean'], prior['std'], data['reward']
+      z_dist = jnp.mean(jnp.abs(embed - embed[idxs]), axis=-1)
+        # * jnp.power(self.config.enc_loss.disc, jnp.arange(embed.shape[1], dtype=jnp.float32))
+      r_dist = jnp.abs(reward - sg(reward[idxs])) 
+      # * jnp.power(self.config.enc_loss.disc, jnp.arange(reward.shape[1], dtype=jnp.float32))
       t_dist = jnp.mean(jnp.sqrt(
         jnp.square(sg(mean[idxs]) - sg(mean)) + jnp.square(sg(std[idxs]) - sg(std))
-      ), axis=-1) * jnp.power(
-        self.config.enc_loss.disc, jnp.arange(prior['mean'].shape[1], dtype=jnp.float32)
-      )
+      ), axis=-1) 
+      # * jnp.power(self.config.enc_loss.disc, jnp.arange(prior['mean'].shape[1], dtype=jnp.float32))
       bisim = r_dist + self.config.enc_loss.disc * t_dist
       losses['enc'] = jnp.mean(jnp.square(z_dist - bisim))
     losses['dyn'] = self.rssm.dyn_loss(post, prior, **self.config.dyn_loss)
