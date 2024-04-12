@@ -120,6 +120,7 @@ class WorldModel(nj.Module):
   def __init__(self, obs_space, act_space, config):
     self.obs_space = obs_space
     self.act_space = act_space['action']
+    print(f"act_space: {self.act_space.shape}")
     self.config = config
     shapes = {k: tuple(v.shape) for k, v in obs_space.items()}
     shapes = {k: v for k, v in shapes.items() if not k.startswith('log_')}
@@ -128,7 +129,13 @@ class WorldModel(nj.Module):
     self.heads = {
         'decoder': nets.MultiDecoder(shapes, **config.decoder, name='dec'),
         'reward': nets.MLP((), **config.reward_head, name='rew'),
-        'cont': nets.MLP((), **config.cont_head, name='cont')}
+        'cont': nets.MLP((), **config.cont_head, name='cont')
+    }
+    self.enc_loss = self.config.enc_loss.impl
+    if self.enc_loss == 'bisim':
+      self.act = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='act')
+      self.repr = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='repr')
+
     self.opt = jaxutils.Optimizer(name='model_opt', **config.model_opt)
     scales = self.config.loss_scales.copy()
     image, vector = scales.pop('image'), scales.pop('vector')
@@ -143,6 +150,8 @@ class WorldModel(nj.Module):
 
   def train(self, data, state):
     modules = [self.encoder, self.rssm, *self.heads.values()]
+    if self.enc_loss == 'bisim':
+      modules.extend([self.act, self.repr])
     mets, (state, outs, metrics) = self.opt(
         modules, self.loss, data, state, has_aux=True)
     metrics.update(mets)
@@ -161,26 +170,22 @@ class WorldModel(nj.Module):
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
     losses = {}
-    if self.config.enc_loss.impl == 'bisim':
+    if self.enc_loss == 'bisim':
+      act_transform = self.act(prev_actions[:, :-1])
+      repr_transform = self.repr(embed[:, :-1])
+      new_repr = act_transform * repr_transform
+      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
       key = jax.random.PRNGKey(self.config.seed)
       idxs = jax.random.permutation(key, self.config.batch_size)
-      z_dist = jnp.mean(jnp.abs(embed - embed[idxs]), axis=-1)
-        # * jnp.power(self.config.enc_loss.disc, jnp.arange(embed.shape[1], dtype=jnp.float32))
-      r_dist = jnp.abs(data['reward'] - sg(data['reward'][idxs])) 
-      # * jnp.power(self.config.enc_loss.disc, jnp.arange(reward.shape[1], dtype=jnp.float32))
-      if self.rssm._classes:
-        mean = self.rssm.get_dist(sg(prior), idxs, get_mean=True)
-        t_dist = 0.5 * self.rssm.get_dist(sg(prior)).kl_divergence(mean) + \
-                 0.5 * self.rssm.get_dist(sg(prior), idxs).kl_divergence(mean)
-      else:
-        mean, std = prior['mean'], prior['std']
-        t_dist = jnp.mean(jnp.sqrt(
-          jnp.square(sg(mean[idxs]) - sg(mean)) + jnp.square(sg(std[idxs]) - sg(std))
-        ), axis=-1) 
-        # * jnp.power(self.config.enc_loss.disc, jnp.arange(prior['mean'].shape[1], dtype=jnp.float32))
-      print(t_dist.shape)
-      bisim = r_dist + self.config.enc_loss.disc * t_dist
-      losses['enc'] = jnp.mean(jnp.square(z_dist - bisim))
+      nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
+      reward = data['reward'][:, :-1]
+      r_dist = jnp.abs(reward - sg(reward[idxs])) 
+      act = self.act(jax.random.uniform(key, shape=prev_actions[:, :-1].shape))
+      nnrepr_transform = self.repr(embed[:, 1:])
+      nnrepr1, nnrepr2 = sg(nnrepr_transform * act), sg(nnrepr_transform[idxs] * act)
+      nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
+      bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
+      losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
     losses['dyn'] = self.rssm.dyn_loss(post, prior, **self.config.dyn_loss)
     losses['rep'] = self.rssm.rep_loss(post, prior, **self.config.rep_loss)
     for key, dist in dists.items():

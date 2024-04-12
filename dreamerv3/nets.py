@@ -71,7 +71,7 @@ class RSSM(nj.Module):
     prior = {k: swap(v) for k, v in prior.items()}
     return prior
 
-  def get_dist(self, state, idxs=None, get_mean=False, get_argmax=False):
+  def get_dist(self, state, idxs=None, get_mean=False, argmax=False):
     if self._classes:
       if get_mean:
         logit1 = state['logit'].astype(f32)
