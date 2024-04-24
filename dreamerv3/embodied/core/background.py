@@ -50,15 +50,16 @@ class ImageSource(object):
 
 
 class RandomVideoSource(ImageSource):
-  def __init__(self, shape, filelist, total_frames=None, grayscale=False, seed=0):
+  def __init__(self, shape, filelist, seed=0, total_frames=None, grayscale=False):
     """
     Args:
       shape: [h, w]
       filelist: a list of video files
     """
-    np.random.seed(seed)
-    random.seed(seed)
-    print(f"BACKGR SEED: {seed}")
+    self.seed = seed
+    print(f"BACKGR SEED: {self.seed}")
+    np.random.seed(self.seed)
+    random.seed(self.seed)
     self.grayscale = grayscale
     self.total_frames = total_frames
     self.shape = shape
@@ -117,10 +118,11 @@ class RandomPickleSource(ImageSource):
       shape: [h, w]
       filelist: a list of video files
     """
-    np.random.seed(seed)
-    random.seed(seed)
-    print(f"BACKGR SEED: {seed}")
     self.filelist = filelist
+    self.seed = seed
+    print(f"BACKGR SEED: {self.seed}")
+    np.random.seed(self.seed)
+    random.seed(self.seed)
     self.build_arr()
     self.current_idx = 0
     self.reset()
@@ -141,17 +143,19 @@ class RandomPickleSource(ImageSource):
   
   
 class RandomNoise(ImageSource):
-  def __init__(self, shape, total_frames=None, grayscale=False, seed=0):
+  def __init__(self, shape, seed=0, total_frames=None, grayscale=False):
     """
     Args:
       shape: [h, w]
       filelist: a list of video files
     """
-    np.random.seed(seed)
-    print(f"BACKGR SEED: {seed}")
     self.channels = 1 if grayscale else 3
     self.total_frames = total_frames if total_frames else 500
     self.shape = shape
+    self.seed = seed
+    print(f"BACKGR SEED: {self.seed}")
+    np.random.seed(self.seed)
+    random.seed(self.seed)
     self.build_arr()
     self.current_idx = 0
     self.reset()

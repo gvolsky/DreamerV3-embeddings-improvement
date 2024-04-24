@@ -16,6 +16,7 @@ class DMC(embodied.Env):
   def __init__(
       self, 
       env, 
+      seed=0,
       repeat=1, 
       render=True, 
       size=(64, 64), 
@@ -24,7 +25,6 @@ class DMC(embodied.Env):
       back_path=None,
       total_frames=1000,
       grayscale=False,
-      seed=0
       ):
     # TODO: This env variable is meant for headless GPU machines but may fail
     # on CPU-only machines.
@@ -35,15 +35,15 @@ class DMC(embodied.Env):
       files = glob.glob(os.path.expanduser(back_path))
       assert len(files), "Pattern {} does not match any files".format(back_path)
       self._bg = embodied.background.RandomVideoSource(
-        size, files, grayscale=grayscale, total_frames=total_frames, seed=seed
-        )
+        size, files, seed=seed, grayscale=grayscale, total_frames=total_frames
+      )
     elif back_type == 'pickle':
       files = glob.glob(os.path.expanduser(back_path))
       assert len(files), "Pattern {} does not match any files".format(back_path)
       self._bg = embodied.background.RandomPickleSource(files, seed=seed)
     elif back_type == 'noise':
       self._bg = embodied.background.RandomNoise(
-        size, grayscale=grayscale, total_frames=total_frames, seed=seed
+        size, seed=seed, grayscale=grayscale, total_frames=total_frames
       )
     else:
       self._bg = None

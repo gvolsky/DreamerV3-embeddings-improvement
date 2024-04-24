@@ -171,8 +171,8 @@ class WorldModel(nj.Module):
       dists.update(out)
     losses = {}
     if self.enc_loss == 'bisim':
-      act_transform = self.act(prev_actions[:, :-1])
-      concat_embed = jnp.concatenate((embed, sg(prior['deter'])), axis=-1)
+      act_transform = self.act(sg(prev_actions[:, :-1]))
+      concat_embed = jnp.concatenate([sg(prior['deter']), embed], axis=-1)
       repr_transform = self.repr(concat_embed[:, :-1])
       new_repr = act_transform * repr_transform
       losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
