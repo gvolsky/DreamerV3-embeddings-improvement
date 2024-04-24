@@ -20,7 +20,8 @@ class DMC(embodied.Env):
       render=True, 
       size=(64, 64), 
       camera=-1, 
-      background=None, 
+      back_type=None, 
+      back_path=None,
       total_frames=1000,
       grayscale=False
       ):
@@ -28,6 +29,42 @@ class DMC(embodied.Env):
     # on CPU-only machines.
     if 'MUJOCO_GL' not in os.environ:
       os.environ['MUJOCO_GL'] = 'egl'
+
+    if back_type == 'video':
+      files = glob.glob(os.path.expanduser(back_path))
+      assert len(files), "Pattern {} does not match any files".format(back_path)
+      self._bg = embodied.background.RandomVideoSource(
+        size, files, grayscale=grayscale, total_frames=total_frames
+        )
+    elif back_type == 'pickle':
+      files = glob.glob(os.path.expanduser(back_path))
+      assert len(files), "Pattern {} does not match any files".format(back_path)
+      self._bg = embodied.background.RandomPickleSource(files)
+    elif back_type == 'noise':
+      self._bg = embodied.background.RandomNoise(
+        size, grayscale=grayscale, total_frames=total_frames
+      )
+    else:
+      self._bg = None
+
+    if self._bg:
+      from dm_control.utils import io as resources
+      import dm_control.suite
+      _SUITE_DIR = os.getcwd()
+      _FILENAMES = [
+        "dreamerv3/embodied/envs/dmc_xml/materials.xml",
+        "dreamerv3/embodied/envs/dmc_xml/skybox.xml",
+        "dreamerv3/embodied/envs/dmc_xml/visual.xml",
+      ]
+      ASSETS = {filename: resources.GetResource(os.path.join(_SUITE_DIR, filename)) for filename in _FILENAMES}
+      def read_model(model_filename):
+        """Reads a model XML file and returns its contents as a string."""
+        return resources.GetResource(model_filename)
+      def get_model_and_assets():
+        """Returns a tuple containing the model XML string and a dict of assets."""
+        return read_model(os.path.join(_SUITE_DIR, "dreamerv3/embodied/envs/dmc_xml/walker.xml")), ASSETS
+      dm_control.suite.walker.get_model_and_assets = get_model_and_assets
+    
     if isinstance(env, str):
       domain, task = env.split('_', 1)
       if camera == -1:
@@ -43,6 +80,7 @@ class DMC(embodied.Env):
       else:
         from dm_control import suite
         env = suite.load(domain, task)
+
     self._dmenv = env
     from . import from_dm
     self._env = from_dm.FromDM(self._dmenv)
@@ -51,15 +89,6 @@ class DMC(embodied.Env):
     self._render = render
     self._size = size
     self._camera = camera
-
-    if background:
-      files = glob.glob(os.path.expanduser(background))
-      assert len(files), "Pattern {} does not match any files".format(background)
-      self._bg = embodied.background.RandomVideoSource(
-        size, files, grayscale=grayscale, total_frames=total_frames
-        )
-    else:
-      self._bg = None
 
   @functools.cached_property
   def obs_space(self):
@@ -88,7 +117,7 @@ class DMC(embodied.Env):
   def render(self):
     img = self._dmenv.physics.render(*self._size, camera_id=self._camera)
     if self._bg is not None:
-      mask = np.logical_and((img[:, :, 2] > img[:, :, 1]), (img[:, :, 2] > img[:, :, 0]))  # hardcoded for dmc
+      mask = np.all(img == 0, axis=-1)
       bg = self._bg.get_image()
       img[mask] = bg[mask]
     return img

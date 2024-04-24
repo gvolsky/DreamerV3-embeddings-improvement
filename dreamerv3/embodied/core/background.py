@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
+import pickle
 import random
-import tqdm
 
 def read_video(video_path, grayscale=False):
   cap = cv2.VideoCapture(video_path)
@@ -56,8 +56,6 @@ class RandomVideoSource(ImageSource):
       shape: [h, w]
       filelist: a list of video files
     """
-    np.random.seed(0)
-    random.seed(0)
     self.grayscale = grayscale
     self.total_frames = total_frames
     self.shape = shape
@@ -99,6 +97,59 @@ class RandomVideoSource(ImageSource):
           else:
             self.arr[total_frame_i] = cv2.resize(frames[frame_i], (self.shape[1], self.shape[0])) 
           total_frame_i += 1
+
+  def reset(self):
+    self._loc = np.random.randint(0, self.total_frames)
+
+  def get_image(self):
+    img = self.arr[self._loc % self.total_frames]
+    self._loc += 1
+    return img
+  
+
+class RandomPickleSource(ImageSource):
+  def __init__(self, filelist):
+    """
+    Args:
+      shape: [h, w]
+      filelist: a list of video files
+    """
+    self.filelist = filelist
+    self.build_arr()
+    self.current_idx = 0
+    self.reset()
+
+  def build_arr(self):
+    fname = random.choice(self.filelist)
+    with open(fname, 'rb') as f:
+      self.arr = pickle.load(f)
+    self.total_frames = len(self.arr)
+
+  def reset(self):
+    self._loc = np.random.randint(0, self.total_frames)
+
+  def get_image(self):
+    img = self.arr[self._loc % self.total_frames]
+    self._loc += 1
+    return img
+  
+  
+class RandomNoise(ImageSource):
+  def __init__(self, shape, total_frames=None, grayscale=False):
+    """
+    Args:
+      shape: [h, w]
+      filelist: a list of video files
+    """
+    self.channels = 1 if grayscale else 3
+    self.total_frames = total_frames if total_frames else 500
+    self.shape = shape
+    self.build_arr()
+    self.current_idx = 0
+    self.reset()
+
+  def build_arr(self):
+    self.arr = np.random.randint(0, 256, (self.total_frames, *self.shape, self.channels ), dtype=np.uint8)
 
   def reset(self):
     self._loc = np.random.randint(0, self.total_frames)

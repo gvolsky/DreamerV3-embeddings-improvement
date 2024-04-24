@@ -18,7 +18,7 @@ from .worker import Worker
 from .batcher import Batcher
 from .metrics import Metrics
 from .uuid import uuid
-from .background import RandomVideoSource
+from .background import RandomVideoSource, RandomPickleSource, RandomNoise
 
 from .batch import BatchEnv
 from .random import RandomAgent

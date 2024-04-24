@@ -25,6 +25,9 @@ import random
 def main(argv=None):
   from . import agent as agt
 
+  np.random.seed(seed=0)
+  random.seed(0)
+
   parsed, other = embodied.Flags(configs=['defaults']).parse_known(argv)
   config = embodied.Config(agt.Agent.configs['defaults'])
   for name in parsed.configs:
