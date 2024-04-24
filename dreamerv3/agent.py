@@ -172,7 +172,8 @@ class WorldModel(nj.Module):
     losses = {}
     if self.enc_loss == 'bisim':
       act_transform = self.act(prev_actions[:, :-1])
-      repr_transform = self.repr(embed[:, :-1])
+      concat_embed = jnp.concatenate((embed, sg(prior['deter'])), axis=-1)
+      repr_transform = self.repr(concat_embed[:, :-1])
       new_repr = act_transform * repr_transform
       losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
       key = jax.random.PRNGKey(self.config.seed)
@@ -181,7 +182,7 @@ class WorldModel(nj.Module):
       reward = data['reward'][:, :-1]
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
       act = self.act(jax.random.uniform(key, shape=prev_actions[:, :-1].shape))
-      nnrepr_transform = self.repr(embed[:, 1:])
+      nnrepr_transform = self.repr(concat_embed[:, 1:])
       nnrepr1, nnrepr2 = sg(nnrepr_transform * act), sg(nnrepr_transform[idxs] * act)
       nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist

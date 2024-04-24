@@ -63,8 +63,8 @@ def main(argv=None):
     elif args.script == 'train_eval':
       replay = make_replay(config, logdir / 'replay')
       eval_replay = make_replay(config, logdir / 'eval_replay', is_eval=True)
-      env = make_envs(config)
-      eval_env = make_envs(config)  # mode='eval'
+      env = make_envs(config, seed=config['seed'])
+      eval_env = make_envs(config, seed=(config['seed'] + 123))  # mode='eval'
       cleanup += [env, eval_env]
       agent = agt.Agent(env.obs_space, env.act_space, step, config)
       embodied.run.train_eval(
