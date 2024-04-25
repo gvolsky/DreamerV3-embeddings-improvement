@@ -170,7 +170,23 @@ class WorldModel(nj.Module):
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
     losses = {}
-    if self.enc_loss == 'bisim':
+    if self.enc_loss == 'bisim1':
+      act_transform = self.act(prev_actions[:, :-1])
+      repr_transform = self.repr(embed[:, :-1])
+      new_repr = act_transform * repr_transform
+      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
+      key = jax.random.PRNGKey(self.config.seed)
+      idxs = jax.random.permutation(key, self.config.batch_size)
+      nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
+      reward = data['reward'][:, :-1]
+      r_dist = jnp.abs(reward - sg(reward[idxs])) 
+      act = self.act(jax.random.uniform(key, shape=prev_actions[:, :-1].shape))
+      nnrepr_transform = self.repr(embed[:, 1:])
+      nnrepr1, nnrepr2 = sg(nnrepr_transform * act), sg(nnrepr_transform[idxs] * act)
+      nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
+      bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
+      losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
+    elif self.enc_loss == 'bisim2':
       act_transform = self.act(sg(prev_actions[:, :-1]))
       concat_embed = jnp.concatenate([sg(prior['deter']), embed], axis=-1)
       repr_transform = self.repr(concat_embed[:, :-1])
