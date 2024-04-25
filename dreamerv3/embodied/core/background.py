@@ -1,7 +1,9 @@
 import numpy as np
 import cv2
+import pickle
 import random
-import tqdm
+
+from itertools import cycle
 
 def read_video(video_path, grayscale=False):
   cap = cv2.VideoCapture(video_path)
@@ -48,16 +50,18 @@ class ImageSource(object):
     """ Called when an episode ends. """
     pass
 
-
+# FIXME: fix random state
 class RandomVideoSource(ImageSource):
-  def __init__(self, shape, filelist, total_frames=None, grayscale=False):
+  def __init__(self, shape, filelist, seed=0, total_frames=None, grayscale=False):
     """
     Args:
       shape: [h, w]
       filelist: a list of video files
     """
-    np.random.seed(0)
-    random.seed(0)
+    self.seed = seed
+    print(f"BACKGR SEED: {self.seed}")
+    np.random.seed(self.seed)
+    random.seed(self.seed)
     self.grayscale = grayscale
     self.total_frames = total_frames
     self.shape = shape
@@ -107,3 +111,46 @@ class RandomVideoSource(ImageSource):
     img = self.arr[self._loc % self.total_frames]
     self._loc += 1
     return img
+  
+
+class RandomPickleSource(ImageSource):
+  def __init__(self, filelist, seed=0):
+    """
+    Args:
+      shape: [h, w]
+      filelist: a list of pickle files
+    """
+    self.filelist = filelist
+    print(f"BACKGR SEED: {seed}")
+    self.rand_gen = random.Random(seed)
+    self.build_arr()
+
+  def build_arr(self):
+    fname = self.rand_gen.choice(self.filelist)
+    with open(fname, 'rb') as f:
+      self.arr = cycle(pickle.load(f))
+
+  def get_image(self):
+    return next(self.arr)
+  
+  
+class RandomNoise(ImageSource):
+  def __init__(self, shape, seed=0, total_frames=None, grayscale=False):
+    """
+    Args:
+      shape: [h, w]
+    """
+    self.channels = 1 if grayscale else 3
+    self.total_frames = total_frames if total_frames else 500
+    self.shape = shape
+    print(f"BACKGR SEED: {seed}")
+    self.rand_gen = np.random.default_rng(seed)
+    self.build_arr()
+
+  def build_arr(self):
+    self.arr = cycle(self.rand_gen.integers(
+      0, 256, (self.total_frames, *self.shape, self.channels), dtype=np.uint8
+    ))
+
+  def get_image(self):
+    return next(self.arr)

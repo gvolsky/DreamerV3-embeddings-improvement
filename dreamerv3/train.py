@@ -3,6 +3,7 @@ import pathlib
 import sys
 import warnings
 from functools import partial as bind
+from copy import copy
 
 warnings.filterwarnings('ignore', '.*box bound precision lowered.*')
 warnings.filterwarnings('ignore', '.*using stateful random seeds*')
@@ -35,14 +36,18 @@ def main(argv=None):
       batch_steps=config.batch_size * config.batch_length)
   print(config)
 
+  global seeds_train, seeds_eval
+  seeds_train = iter(range(config['seed'], 100 * (config['seed'] + 1)))
+  seeds_eval = iter(range(100 * (config['seed'] + 1), 200 * (config['seed'] + 1)))
+
   logdir = embodied.Path(args.logdir)
   logdir.mkdirs()
   config.save(logdir / 'config.yaml')
   step = embodied.Counter()
   logger = make_logger(parsed, logdir, step, config)
   cleanup = []
-  try:
 
+  try:
     if args.script == 'train':
       replay = make_replay(config, logdir / 'replay')
       env = make_envs(config)
@@ -60,8 +65,12 @@ def main(argv=None):
     elif args.script == 'train_eval':
       replay = make_replay(config, logdir / 'replay')
       eval_replay = make_replay(config, logdir / 'eval_replay', is_eval=True)
-      env = make_envs(config)
-      eval_env = make_envs(config)  # mode='eval'
+      env = make_envs(
+        config, seeds_train, back_type=config['back_type'], back_path=config['back_train']
+      )
+      eval_env = make_envs(
+        config, seeds_eval, back_type=config['back_type'], back_path=config['back_eval']
+      )  # mode='eval'
       cleanup += [env, eval_env]
       agent = agt.Agent(env.obs_space, env.act_space, step, config)
       embodied.run.train_eval(
@@ -140,11 +149,12 @@ def make_replay(
   return replay
 
 
-def make_envs(config, **overrides):
+def make_envs(config, seeds, **overrides):
   suite, task = config.task.split('_', 1)
   ctors = []
   for index in range(config.envs.amount):
-    ctor = lambda: make_env(config, **overrides)
+    seed = next(seeds)
+    ctor = lambda seed=seed: make_env(config, seed=seed, **overrides)
     if config.envs.parallel != 'none':
       ctor = bind(embodied.Parallel, ctor, config.envs.parallel)
     if config.envs.restart:

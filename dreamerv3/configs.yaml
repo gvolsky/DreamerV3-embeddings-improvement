@@ -9,6 +9,9 @@ defaults:
   replay_online: False
   eval_dir: ''
   filter: '.*'
+  back_type: None, 
+  back_train: None,
+  back_eval: None
 
   jax:
     platform: gpu
@@ -52,7 +55,7 @@ defaults:
     atari: {size: [64, 64], repeat: 4, sticky: True, gray: False, actions: all, lives: unused, noops: 0, resize: opencv}
     dmlab: {size: [64, 64], repeat: 4, episodic: True}
     minecraft: {size: [64, 64], break_speed: 100.0}
-    dmc: {size: [64, 64], repeat: 2, camera: -1, background: None, total_frames: 1000, grayscale: False}
+    dmc: {size: [64, 64], repeat: 2, camera: -1, total_frames: 1000, grayscale: False}
     loconav: {size: [64, 64], repeat: 2, camera: -1}
 
   # Agent
@@ -69,7 +72,7 @@ defaults:
   decoder: {mlp_keys: '.*', cnn_keys: '.*', act: silu, norm: layer, mlp_layers: 5, mlp_units: 1024, cnn: resnet, cnn_depth: 96, cnn_blocks: 0, image_dist: mse, vector_dist: symlog_mse, inputs: [deter, stoch], resize: stride, winit: normal, fan: avg, outscale: 1.0, minres: 4, cnn_sigmoid: False}
   reward_head: {layers: 5, units: 1024, act: silu, norm: layer, dist: symlog_disc, outscale: 0.0, outnorm: False, inputs: [deter, stoch], winit: normal, fan: avg, bins: 255}
   cont_head: {layers: 5, units: 1024, act: silu, norm: layer, dist: binary, outscale: 1.0, outnorm: False, inputs: [deter, stoch], winit: normal, fan: avg}
-  loss_scales: {image: 1.0, vector: 1.0, reward: 1.0, cont: 1.0, dyn: 0.5, rep: 0.1, actor: 1.0, critic: 1.0, slowreg: 1.0, enc: 1.0}
+  loss_scales: {image: 1.0, vector: 1.0, reward: 1.0, cont: 1.0, dyn: 0.5, rep: 0.1, actor: 1.0, critic: 1.0, slowreg: 1.0, enc: 1.0, rpred: 1.0}
   dyn_loss: {impl: kl, free: 1.0}
   rep_loss: {impl: kl, free: 1.0}
   enc_loss: {impl: bisim, disc: 0.99}
