@@ -132,7 +132,7 @@ class WorldModel(nj.Module):
         'cont': nets.MLP((), **config.cont_head, name='cont')
     }
     self.enc_loss = self.config.enc_loss.impl
-    if self.enc_loss == 'bisim':
+    if self.enc_loss in ['bisim1', 'bisim2']:
       self.act = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='act')
       self.repr = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='repr')
 
@@ -187,7 +187,7 @@ class WorldModel(nj.Module):
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
     elif self.enc_loss == 'bisim2':
-      act_transform = self.act(sg(prev_actions[:, :-1]))
+      act_transform = self.act(prev_actions[:, :-1])
       concat_embed = jnp.concatenate([sg(prior['deter']), embed], axis=-1)
       repr_transform = self.repr(concat_embed[:, :-1])
       new_repr = act_transform * repr_transform

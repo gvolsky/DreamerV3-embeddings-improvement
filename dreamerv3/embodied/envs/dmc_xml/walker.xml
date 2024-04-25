@@ -1,7 +1,7 @@
 <mujoco model="planar walker">
-  <include file="/home/gv/git_clones/DreamerV3-embeddings-improvement/dreamerv3/dmc_xml/visual.xml"/>
-  <include file="/home/gv/git_clones/DreamerV3-embeddings-improvement/dreamerv3/dmc_xml/skybox.xml"/>
-  <include file="/home/gv/git_clones/DreamerV3-embeddings-improvement/dreamerv3/dmc_xml/materials.xml"/>
+  <include file="./visual.xml"/>
+  <include file="./skybox.xml"/>
+  <include file="./materials.xml"/>
 
   <option timestep="0.0025"/>
 

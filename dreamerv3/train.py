@@ -65,8 +65,12 @@ def main(argv=None):
     elif args.script == 'train_eval':
       replay = make_replay(config, logdir / 'replay')
       eval_replay = make_replay(config, logdir / 'eval_replay', is_eval=True)
-      env = make_envs(config, seeds=seeds_train)
-      eval_env = make_envs(config, seeds=seeds_eval)  # mode='eval'
+      env = make_envs(
+        config, seeds_train, back_type=config['back_type'], back_path=config['back_train']
+      )
+      eval_env = make_envs(
+        config, seeds_eval, back_type=config['back_type'], back_path=config['back_eval']
+      )  # mode='eval'
       cleanup += [env, eval_env]
       agent = agt.Agent(env.obs_space, env.act_space, step, config)
       embodied.run.train_eval(
@@ -145,14 +149,12 @@ def make_replay(
   return replay
 
 
-def make_envs(config, **overrides):
+def make_envs(config, seeds, **overrides):
   suite, task = config.task.split('_', 1)
   ctors = []
-  seeds = overrides['seeds']
   for index in range(config.envs.amount):
     seed = next(seeds)
-    print(seed)
-    ctor = lambda seed=seed: make_env(config, seed=seed)
+    ctor = lambda seed=seed: make_env(config, seed=seed, **overrides)
     if config.envs.parallel != 'none':
       ctor = bind(embodied.Parallel, ctor, config.envs.parallel)
     if config.envs.restart:

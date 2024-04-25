@@ -23,7 +23,6 @@ class DMC(embodied.Env):
       camera=-1, 
       back_type=None, 
       back_path=None,
-      total_frames=1000,
       grayscale=False,
       ):
     # TODO: This env variable is meant for headless GPU machines but may fail
@@ -35,16 +34,14 @@ class DMC(embodied.Env):
       files = glob.glob(os.path.expanduser(back_path))
       assert len(files), "Pattern {} does not match any files".format(back_path)
       self._bg = embodied.background.RandomVideoSource(
-        size, files, seed=seed, grayscale=grayscale, total_frames=total_frames
+        size, files, seed=seed, grayscale=grayscale
       )
     elif back_type == 'pickle':
       files = glob.glob(os.path.expanduser(back_path))
       assert len(files), "Pattern {} does not match any files".format(back_path)
       self._bg = embodied.background.RandomPickleSource(files, seed=seed)
     elif back_type == 'noise':
-      self._bg = embodied.background.RandomNoise(
-        size, seed=seed, grayscale=grayscale, total_frames=total_frames
-      )
+      self._bg = embodied.background.RandomNoise(size, seed=seed, grayscale=grayscale)
     else:
       self._bg = None
 
@@ -105,8 +102,6 @@ class DMC(embodied.Env):
   def step(self, action):
     if action['reset'] and self._bg:
       self._bg.build_arr()
-      self._bg.current_idx = 0
-      self._bg.reset()
     for key, space in self.act_space.items():
       if not space.discrete:
         assert np.isfinite(action[key]).all(), (key, action[key])
