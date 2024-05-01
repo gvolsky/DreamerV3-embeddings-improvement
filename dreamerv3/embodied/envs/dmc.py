@@ -32,6 +32,7 @@ class DMC(embodied.Env):
 
     if back_type == 'video':
       files = glob.glob(os.path.expanduser(back_path))
+      print(f"BACKGROUND PATH: {back_path}")
       assert len(files), "Pattern {} does not match any files".format(back_path)
       self._bg = embodied.background.RandomVideoSource(
         size, files, seed=seed, grayscale=grayscale
@@ -113,7 +114,7 @@ class DMC(embodied.Env):
   def render(self):
     img = self._dmenv.physics.render(*self._size, camera_id=self._camera)
     if self._bg is not None:
-      mask = np.all(img == 0, axis=-1)
-      bg = self._bg.get_image()
-      img[mask] = bg[mask]
+      mask1, mask2 = np.all(img == 255, axis=-1), np.all(img == 0, axis=-1)
+      bg, grid = self._bg.get_images()
+      img[mask1], img[mask2] = bg[mask1], grid[mask2]
     return img

@@ -67,15 +67,19 @@ class RandomVideoSource(ImageSource):
     self.filelist = filelist
     self.build_arr()
 
-  def build_arr(self):
+  def build_frames(self):
     frames = []
     while len(frames) == 0:
       fname = self.rand_gen.choice(self.filelist)
       frames = read_video(fname, self.shape, self.grayscale)
-    self.arr = cycle(frames)
+    return cycle(frames)
+  
+  def build_arr(self):
+    self.backgr = self.build_frames()
+    self.grid = self.build_frames()
 
-  def get_image(self):
-    return next(self.arr)
+  def get_images(self):
+    return next(self.backgr), next(self.grid)
   
 
 class RandomPickleSource(ImageSource):
