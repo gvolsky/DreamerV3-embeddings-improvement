@@ -68,8 +68,11 @@ class RandomVideoSource(ImageSource):
     self.build_arr()
 
   def build_arr(self):
-    fname = self.rand_gen.choice(self.filelist)
-    self.arr = cycle(read_video(fname, self.shape, self.grayscale))
+    frames = []
+    while len(frames) == 0:
+      fname = self.rand_gen.choice(self.filelist)
+      frames = read_video(fname, self.shape, self.grayscale)
+    self.arr = cycle(frames)
 
   def get_image(self):
     return next(self.arr)

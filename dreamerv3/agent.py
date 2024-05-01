@@ -132,6 +132,7 @@ class WorldModel(nj.Module):
         'cont': nets.MLP((), **config.cont_head, name='cont')
     }
     self.enc_loss = self.config.enc_loss.impl
+    print(f"ENC LOSS IMPL: {self.enc_loss}")
     if self.enc_loss in ['bisim1', 'bisim2']:
       self.act = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='act')
       self.repr = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='repr')
@@ -150,7 +151,7 @@ class WorldModel(nj.Module):
 
   def train(self, data, state):
     modules = [self.encoder, self.rssm, *self.heads.values()]
-    if self.enc_loss == 'bisim':
+    if self.enc_loss in ['bisim1', 'bisim2']:
       modules.extend([self.act, self.repr])
     mets, (state, outs, metrics) = self.opt(
         modules, self.loss, data, state, has_aux=True)
