@@ -171,6 +171,7 @@ class WorldModel(nj.Module):
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
     losses = {}
+
     if self.enc_loss == 'bisim1':
       act_transform = self.act(prev_actions[:, :-1])
       repr_transform = self.repr(embed[:, :-1])
@@ -187,6 +188,7 @@ class WorldModel(nj.Module):
       nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
+
     elif self.enc_loss == 'bisim2':
       act_transform = self.act(prev_actions[:, :-1])
       concat_embed = jnp.concatenate([sg(prior['deter']), embed], axis=-1)
@@ -204,6 +206,24 @@ class WorldModel(nj.Module):
       nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
+
+    elif self.enc_loss == 'bisim':
+      key = jax.random.PRNGKey(self.config.seed)
+      idxs = jax.random.permutation(key, self.config.batch_size)
+      z_dist = jnp.mean(jnp.abs(embed - embed[idxs]), axis=-1)
+      r_dist = jnp.abs(data['reward'] - sg(data['reward'][idxs])) 
+      if self.rssm._classes:
+        mean = self.rssm.get_dist(sg(prior), idxs, get_mean=True)
+        t_dist = 0.5 * self.rssm.get_dist(sg(prior)).kl_divergence(mean) + \
+                 0.5 * self.rssm.get_dist(sg(prior), idxs).kl_divergence(mean)
+      else:
+        mean, std = prior['mean'], prior['std']
+        t_dist = jnp.mean(jnp.sqrt(
+          jnp.square(sg(mean[idxs]) - sg(mean)) + jnp.square(sg(std[idxs]) - sg(std))
+        ), axis=-1) 
+      bisim = r_dist + self.config.enc_loss.disc * t_dist
+      losses['enc'] = jnp.mean(jnp.square(z_dist - bisim))
+
     losses['dyn'] = self.rssm.dyn_loss(post, prior, **self.config.dyn_loss)
     losses['rep'] = self.rssm.rep_loss(post, prior, **self.config.rep_loss)
     for key, dist in dists.items():
