@@ -4,6 +4,8 @@ import jax.numpy as jnp
 import ruamel.yaml as yaml
 tree_map = jax.tree_util.tree_map
 sg = lambda x: tree_map(jax.lax.stop_gradient, x)
+df = lambda d: tree_map(lambda x: x[:, 1:], d)
+dl = lambda d: tree_map(lambda x: x[:, :-1], d)
 
 import logging
 logger = logging.getLogger()
@@ -133,7 +135,7 @@ class WorldModel(nj.Module):
     }
     self.enc_loss = self.config.enc_loss.impl
     print(f"ENC LOSS IMPL: {self.enc_loss}")
-    if self.enc_loss in ['bisim1', 'bisim2']:
+    if self.enc_loss in ['bisim1', 'bisim2', 'bisim3', 'bisim4']:
       self.act = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='act')
       self.repr = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='repr')
 
@@ -151,7 +153,7 @@ class WorldModel(nj.Module):
 
   def train(self, data, state):
     modules = [self.encoder, self.rssm, *self.heads.values()]
-    if self.enc_loss in ['bisim1', 'bisim2']:
+    if self.enc_loss in ['bisim1', 'bisim2', 'bisim3', 'bisim4']:
       modules.extend([self.act, self.repr])
     mets, (state, outs, metrics) = self.opt(
         modules, self.loss, data, state, has_aux=True)
@@ -171,13 +173,13 @@ class WorldModel(nj.Module):
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
     losses = {}
+    key = nj.rng()
 
     if self.enc_loss == 'bisim1':
       act_transform = self.act(prev_actions[:, :-1])
       repr_transform = self.repr(embed[:, :-1])
       new_repr = act_transform * repr_transform
       losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
-      key = jax.random.PRNGKey(self.config.seed)
       idxs = jax.random.permutation(key, self.config.batch_size)
       nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
       reward = data['reward'][:, :-1]
@@ -195,7 +197,6 @@ class WorldModel(nj.Module):
       repr_transform = self.repr(concat_embed[:, :-1])
       new_repr = act_transform * repr_transform
       losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
-      key = jax.random.PRNGKey(self.config.seed)
       idxs = jax.random.permutation(key, self.config.batch_size)
       nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
       reward = data['reward'][:, :-1]
@@ -207,8 +208,44 @@ class WorldModel(nj.Module):
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
 
+    elif self.enc_loss == 'bisim3':
+      act_transform = self.act(prev_actions[:, :-1])
+      # concat_embed = jnp.concatenate([sg(prior['deter']), embed], axis=-1)
+      repr_transform = self.repr(embed)
+      new_repr = act_transform * repr_transform[:, :-1]
+      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(df(embed))))
+      idxs = jax.random.permutation(key, self.config.batch_size)
+      reward = data['reward']
+      r_dist = jnp.abs(reward - sg(reward[idxs])) 
+      ract = jax.random.uniform(key, shape=prev_actions.shape)
+      rand_repr = self.act(ract) * repr_transform
+      rand_repr_dist = jnp.mean(jnp.abs(rand_repr - sg(rand_repr[idxs])), axis=-1)
+      _, nprior = self.rssm.observe(embed, ract, jnp.zeros_like(data['is_first']), prev_latent)
+      mean = self.rssm.get_dist(sg(nprior), idxs, get_mean=True)
+      t_dist = 0.5 * self.rssm.get_dist(sg(nprior)).kl_divergence(mean) + \
+               0.5 * self.rssm.get_dist(sg(nprior), idxs).kl_divergence(mean)
+      bisim = r_dist + self.config.enc_loss.disc * t_dist
+      losses['enc'] = jnp.mean(jnp.square(rand_repr_dist - bisim))
+
+    elif self.enc_loss == 'bisim4':
+      act_transform = self.act(prev_actions[:, :-1])
+      repr_transform = self.repr(embed)
+      new_repr = act_transform * dl(repr_transform)
+      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(df(embed))))
+      idxs = jax.random.permutation(key, self.config.batch_size)
+      reward = data['reward']
+      r_dist = jnp.abs(reward - sg(reward[idxs])) 
+      ract = jax.random.uniform(key, shape=prev_actions.shape)
+      rand_repr = self.act(ract) * repr_transform
+      rand_repr_dist = jnp.mean(jnp.abs(rand_repr - sg(rand_repr[idxs])), axis=-1)
+      _, nprior = self.rssm.observe(embed, ract, jnp.zeros_like(data['is_first']), prev_latent)
+      mean = self.rssm.get_dist(sg(nprior), idxs, get_mean=True)
+      t_dist = 0.5 * self.rssm.get_dist(sg(nprior)).kl_divergence(mean) + \
+               0.5 * self.rssm.get_dist(sg(nprior), idxs).kl_divergence(mean)
+      bisim = r_dist + self.config.enc_loss.disc * t_dist
+      losses['enc'] = jnp.mean(jnp.square(rand_repr_dist - bisim))
+
     elif self.enc_loss == 'bisim':
-      key = jax.random.PRNGKey(self.config.seed)
       idxs = jax.random.permutation(key, self.config.batch_size)
       z_dist = jnp.mean(jnp.abs(embed - embed[idxs]), axis=-1)
       r_dist = jnp.abs(data['reward'] - sg(data['reward'][idxs])) 
