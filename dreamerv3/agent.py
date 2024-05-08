@@ -184,7 +184,7 @@ class WorldModel(nj.Module):
     if self.enc_loss in USING_ACT:
       embed_data = jnp.concatenate([sg(prior['deter']), embed], -1) if self.enc_loss in USING_HIST \
                                                                     else embed
-      act_net = self.act(dl(data['action']))
+      act_net = self.act(sg(dl(data['action'])))
       repr_net = self.repr(dl(embed_data))
       repr_out = act_net * repr_net
       losses['rpred'] = jnp.mean(jnp.abs(repr_out - sg(df(embed))))
@@ -192,10 +192,10 @@ class WorldModel(nj.Module):
     if self.enc_loss == 'bisim1':
       new_repr = sg(act_net) * repr_net
       idxs = jax.random.permutation(nj.rng(), self.config.batch_size)
-      nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
-      reward = dl(data['reward'])
+      nrepr_dist = jnp.mean(jnp.abs(new_repr - sg(new_repr[idxs])), axis=-1)
+      reward = df(data['reward'])
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      act = sg(self.act(jax.random.uniform(nj.rng(), shape=dl(data['action']).shape)))
+      act = sg(self.act(jax.random.uniform(nj.rng(), shape=dl(data['action']).shape, minval=-1.0, maxval=1.0)))
       nnrepr_transform = sg(self.repr(sg(new_repr)))
       nnrepr1 = nnrepr_transform * act
       nnrepr2 = nnrepr1[idxs]
@@ -209,7 +209,7 @@ class WorldModel(nj.Module):
       nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
       reward = dl(data['reward'])
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      act = self.act(jax.random.uniform(key, shape=prev_actions[:, :-1].shape))
+      act = self.act(jax.random.uniform(key, shape=dl(data['action']).shape, minval=-1.0, maxval=1.0))
       nnrepr_transform = self.repr(embed_data[:, 1:])
       nnrepr1, nnrepr2 = sg(nnrepr_transform * act), sg(nnrepr_transform[idxs] * act)
       nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
@@ -217,23 +217,24 @@ class WorldModel(nj.Module):
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
 
     elif self.enc_loss == 'bisim3':
-      act_transform = self.act(prev_actions[:, :-1])
-      # concat_embed = jnp.concatenate([sg(prior['deter']), embed], axis=-1)
-      repr_transform = self.repr(embed)
-      new_repr = act_transform * repr_transform[:, :-1]
-      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(df(embed))))
-      idxs = jax.random.permutation(key, self.config.batch_size)
-      reward = data['reward']
-      r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      ract = jax.random.uniform(key, shape=prev_actions.shape)
-      rand_repr = self.act(ract) * repr_transform
+      new_repr = sg(act_net) * repr_net
+      idxs = jax.random.permutation(nj.rng(), self.config.batch_size)
+      # reward = data['reward']
+      # r_dist = jnp.abs(reward - sg(reward[idxs])) 
+      ract = jax.random.uniform(key, shape=dl(prev_actions).shape, minval=-1.0, maxval=1.0)
+      rand_repr = self.act(ract) * repr_net
       rand_repr_dist = jnp.mean(jnp.abs(rand_repr - sg(rand_repr[idxs])), axis=-1)
-      _, nprior = self.rssm.observe(embed, ract, jnp.zeros_like(data['is_first']), prev_latent)
+      new_embed = jnp.concatenate([embed[:, 0, None], rand_repr], 1)
+      new_act = jnp.concatenate([prev_action[:, None], ract], 1)
+      npost, nprior = self.rssm.observe(sg(new_embed), sg(new_act), data['is_first'], prev_latent)
+      nfeats = {**npost, 'embed': new_embed}
+      nreward = self.heads['reward'](sg(nfeats)).mean()
+      r_dist = jnp.abs(sg(nreward) - sg(nreward[idxs]))
       mean = self.rssm.get_dist(sg(nprior), idxs, get_mean=True)
       t_dist = 0.5 * self.rssm.get_dist(sg(nprior)).kl_divergence(mean) + \
                0.5 * self.rssm.get_dist(sg(nprior), idxs).kl_divergence(mean)
       bisim = r_dist + self.config.enc_loss.disc * t_dist
-      losses['enc'] = jnp.mean(jnp.square(rand_repr_dist - bisim))
+      losses['enc'] = jnp.mean(jnp.square(rand_repr_dist - df(bisim)))
 
     elif self.enc_loss == 'bisim4':
       act_transform = self.act(prev_actions[:, :-1])
@@ -243,7 +244,7 @@ class WorldModel(nj.Module):
       idxs = jax.random.permutation(key, self.config.batch_size)
       reward = data['reward']
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      ract = jax.random.uniform(key, shape=prev_actions.shape)
+      ract = jax.random.uniform(key, shape=prev_actions.shape, minval=-1.0, maxval=1.0)
       rand_repr = self.act(ract) * repr_transform
       rand_repr_dist = jnp.mean(jnp.abs(rand_repr - sg(rand_repr[idxs])), axis=-1)
       _, nprior = self.rssm.observe(embed, ract, jnp.zeros_like(data['is_first']), prev_latent)
