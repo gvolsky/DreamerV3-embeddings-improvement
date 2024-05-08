@@ -413,7 +413,7 @@ class MLP(nj.Module):
 
   def __init__(
       self, shape, layers, units, inputs=['tensor'], dims=None,
-      symlog_inputs=False, **kw):
+      symlog_inputs=False, activations=None, **kw):
     assert shape is None or isinstance(shape, (int, tuple, dict)), shape
     if isinstance(shape, int):
       shape = (shape,)
@@ -422,6 +422,7 @@ class MLP(nj.Module):
     self._units = units
     self._inputs = Input(inputs, dims=dims)
     self._symlog_inputs = symlog_inputs
+    self._activations = activations
     distkeys = (
         'dist', 'outscale', 'minstd', 'maxstd', 'outnorm', 'unimix', 'bins')
     self._dense = {k: v for k, v in kw.items() if k not in distkeys}
@@ -433,8 +434,14 @@ class MLP(nj.Module):
       feat = jaxutils.symlog(feat)
     x = jaxutils.cast_to_compute(feat)
     x = x.reshape([-1, x.shape[-1]])
-    for i in range(self._layers):
-      x = self.get(f'h{i}', Linear, self._units, **self._dense)(x)
+    if self._activations is not None:
+      for i in range(self._layers):
+        x = self.get(
+          f'h{i}', Linear, self._units, act=self._activations[i], **self._dense
+        )(x)
+    else:
+      for i in range(self._layers):
+        x = self.get(f'h{i}', Linear, self._units, **self._dense)(x)
     x = x.reshape(feat.shape[:-1] + (x.shape[-1],))
     if self._shape is None:
       return x

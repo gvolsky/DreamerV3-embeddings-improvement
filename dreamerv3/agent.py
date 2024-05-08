@@ -6,6 +6,8 @@ tree_map = jax.tree_util.tree_map
 sg = lambda x: tree_map(jax.lax.stop_gradient, x)
 df = lambda d: tree_map(lambda x: x[:, 1:], d)
 dl = lambda d: tree_map(lambda x: x[:, :-1], d)
+USING_HIST = ['bisim2']
+USING_ACT = ['bisim1', 'bisim2', 'bisim3', 'bisim4']
 
 import logging
 logger = logging.getLogger()
@@ -135,9 +137,13 @@ class WorldModel(nj.Module):
     }
     self.enc_loss = self.config.enc_loss.impl
     print(f"ENC LOSS IMPL: {self.enc_loss}")
-    if self.enc_loss in ['bisim1', 'bisim2', 'bisim3', 'bisim4']:
-      self.act = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='act')
-      self.repr = nets.MLP(None, layers=1, units=4096, inputs=['tensor'], name='repr')
+    if self.enc_loss in USING_ACT:
+      self.act = nets.MLP(
+        None, layers=2, units=4096, activations=['silu', 'none'], inputs=['tensor'], name='act'
+      )
+      self.repr = nets.MLP(
+        None, layers=2, units=4096, activations=['silu', 'none'], inputs=['tensor'], name='repr'
+      )
 
     self.opt = jaxutils.Optimizer(name='model_opt', **config.model_opt)
     scales = self.config.loss_scales.copy()
@@ -153,7 +159,7 @@ class WorldModel(nj.Module):
 
   def train(self, data, state):
     modules = [self.encoder, self.rssm, *self.heads.values()]
-    if self.enc_loss in ['bisim1', 'bisim2', 'bisim3', 'bisim4']:
+    if self.enc_loss in USING_ACT:
       modules.extend([self.act, self.repr])
     mets, (state, outs, metrics) = self.opt(
         modules, self.loss, data, state, has_aux=True)
@@ -175,34 +181,36 @@ class WorldModel(nj.Module):
     losses = {}
     key = nj.rng()
 
+    if self.enc_loss in USING_ACT:
+      embed_data = jnp.concatenate([sg(prior['deter']), embed], -1) if self.enc_loss in USING_HIST \
+                                                                    else embed
+      act_net = self.act(dl(data['action']))
+      repr_net = self.repr(dl(embed_data))
+      repr_out = act_net * repr_net
+      losses['rpred'] = jnp.mean(jnp.abs(repr_out - sg(df(embed))))
+
     if self.enc_loss == 'bisim1':
-      act_transform = self.act(prev_actions[:, :-1])
-      repr_transform = self.repr(embed[:, :-1])
-      new_repr = act_transform * repr_transform
-      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
-      idxs = jax.random.permutation(key, self.config.batch_size)
+      new_repr = sg(act_net) * repr_net
+      idxs = jax.random.permutation(nj.rng(), self.config.batch_size)
       nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
-      reward = data['reward'][:, :-1]
+      reward = dl(data['reward'])
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      act = self.act(jax.random.uniform(key, shape=prev_actions[:, :-1].shape))
-      nnrepr_transform = self.repr(embed[:, 1:])
-      nnrepr1, nnrepr2 = sg(nnrepr_transform * act), sg(nnrepr_transform[idxs] * act)
-      nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
+      act = sg(self.act(jax.random.uniform(nj.rng(), shape=dl(data['action']).shape)))
+      nnrepr_transform = sg(self.repr(sg(new_repr)))
+      nnrepr1 = nnrepr_transform * act
+      nnrepr2 = nnrepr1[idxs]
+      nnrepr_dist = jnp.mean(jnp.abs(sg(nnrepr1) - sg(nnrepr2)), axis=-1)
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
 
     elif self.enc_loss == 'bisim2':
-      act_transform = self.act(prev_actions[:, :-1])
-      concat_embed = jnp.concatenate([sg(prior['deter']), embed], axis=-1)
-      repr_transform = self.repr(concat_embed[:, :-1])
-      new_repr = act_transform * repr_transform
-      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
-      idxs = jax.random.permutation(key, self.config.batch_size)
+      new_repr = sg(act_net) * repr_net
+      idxs = jax.random.permutation(nj.rng(), self.config.batch_size)
       nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
-      reward = data['reward'][:, :-1]
+      reward = dl(data['reward'])
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
       act = self.act(jax.random.uniform(key, shape=prev_actions[:, :-1].shape))
-      nnrepr_transform = self.repr(concat_embed[:, 1:])
+      nnrepr_transform = self.repr(embed_data[:, 1:])
       nnrepr1, nnrepr2 = sg(nnrepr_transform * act), sg(nnrepr_transform[idxs] * act)
       nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
