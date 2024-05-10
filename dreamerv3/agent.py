@@ -2,12 +2,15 @@ import embodied
 import jax
 import jax.numpy as jnp
 import ruamel.yaml as yaml
+from jax import random
+
 tree_map = jax.tree_util.tree_map
 sg = lambda x: tree_map(jax.lax.stop_gradient, x)
 df = lambda d: tree_map(lambda x: x[:, 1:], d)
 dl = lambda d: tree_map(lambda x: x[:, :-1], d)
-USING_HIST = ['bisim2']
+USING_HIST = []
 USING_ACT = ['bisim1', 'bisim2', 'bisim3', 'bisim4']
+NUM_SAMPLES = 10
 
 import logging
 logger = logging.getLogger()
@@ -139,10 +142,10 @@ class WorldModel(nj.Module):
     print(f"ENC LOSS IMPL: {self.enc_loss}")
     if self.enc_loss in USING_ACT:
       self.act = nets.MLP(
-        None, layers=2, units=4096, activations=['silu', 'none'], inputs=['tensor'], name='act'
+        None, layers=1, units=4096, inputs=['tensor'], name='act'
       )
       self.repr = nets.MLP(
-        None, layers=2, units=4096, activations=['silu', 'none'], inputs=['tensor'], name='repr'
+        None, layers=1, units=4096, inputs=['tensor'], name='repr'
       )
 
     self.opt = jaxutils.Optimizer(name='model_opt', **config.model_opt)
@@ -179,49 +182,47 @@ class WorldModel(nj.Module):
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
     losses = {}
-    key = nj.rng()
 
     if self.enc_loss in USING_ACT:
       embed_data = jnp.concatenate([sg(prior['deter']), embed], -1) if self.enc_loss in USING_HIST \
                                                                     else embed
-      act_net = self.act(sg(dl(data['action'])))
+      act_net = self.act(dl(data['action']))
       repr_net = self.repr(dl(embed_data))
       repr_out = act_net * repr_net
       losses['rpred'] = jnp.mean(jnp.abs(repr_out - sg(df(embed))))
 
     if self.enc_loss == 'bisim1':
-      new_repr = sg(act_net) * repr_net
-      idxs = jax.random.permutation(nj.rng(), self.config.batch_size)
+      new_repr = act_net * repr_net
+      idxs = random.permutation(nj.rng(), self.config.batch_size)
       nrepr_dist = jnp.mean(jnp.abs(new_repr - sg(new_repr[idxs])), axis=-1)
       reward = df(data['reward'])
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      act = sg(self.act(jax.random.uniform(nj.rng(), shape=dl(data['action']).shape, minval=-1.0, maxval=1.0)))
+      act = random.uniform(nj.rng(), dl(data['action']).shape, minval=-1.0, maxval=1.0)
+      act = sg(self.act(act))
       nnrepr_transform = sg(self.repr(sg(new_repr)))
-      nnrepr1 = nnrepr_transform * act
+      nnrepr1 = jnp.mean(nnrepr_transform * act, axis=0)
       nnrepr2 = nnrepr1[idxs]
       nnrepr_dist = jnp.mean(jnp.abs(sg(nnrepr1) - sg(nnrepr2)), axis=-1)
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
 
     elif self.enc_loss == 'bisim2':
-      new_repr = sg(act_net) * repr_net
-      idxs = jax.random.permutation(nj.rng(), self.config.batch_size)
-      nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
+      idxs = jax.random.permutation(random.PRNGKey(0), self.config.batch_size)
+      nrepr_dist = jnp.mean(jnp.abs(repr_out - repr_out[idxs]), axis=-1)
       reward = dl(data['reward'])
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      act = self.act(jax.random.uniform(key, shape=dl(data['action']).shape, minval=-1.0, maxval=1.0))
-      nnrepr_transform = self.repr(embed_data[:, 1:])
-      nnrepr1, nnrepr2 = sg(nnrepr_transform * act), sg(nnrepr_transform[idxs] * act)
-      nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
+      acts = random.uniform(random.PRNGKey(0), dl(data['action']).shape, minval=-1.0, maxval=1.0)
+      act = self.act(acts)
+      nnrepr_transform = self.repr(df(embed))
+      nnrepr1, nnrepr2 = jnp.mean(nnrepr_transform * act, 0), jnp.mean(nnrepr_transform[idxs] * act, 0)
+      nnrepr_dist = jnp.mean(jnp.abs(sg(nnrepr1) - sg(nnrepr2)), axis=-1)
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
 
     elif self.enc_loss == 'bisim3':
-      new_repr = sg(act_net) * repr_net
-      idxs = jax.random.permutation(nj.rng(), self.config.batch_size)
-      # reward = data['reward']
-      # r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      ract = jax.random.uniform(key, shape=dl(prev_actions).shape, minval=-1.0, maxval=1.0)
+      new_repr = act_net * repr_net
+      idxs = random.permutation(nj.rng(), self.config.batch_size)
+      ract = random.uniform(nj.rng(), shape=dl(prev_actions).shape, minval=-1.0, maxval=1.0)
       rand_repr = self.act(ract) * repr_net
       rand_repr_dist = jnp.mean(jnp.abs(rand_repr - sg(rand_repr[idxs])), axis=-1)
       new_embed = jnp.concatenate([embed[:, 0, None], rand_repr], 1)
@@ -237,25 +238,28 @@ class WorldModel(nj.Module):
       losses['enc'] = jnp.mean(jnp.square(rand_repr_dist - df(bisim)))
 
     elif self.enc_loss == 'bisim4':
-      act_transform = self.act(prev_actions[:, :-1])
-      repr_transform = self.repr(embed)
-      new_repr = act_transform * dl(repr_transform)
-      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(df(embed))))
-      idxs = jax.random.permutation(key, self.config.batch_size)
-      reward = data['reward']
+      new_repr = sg(act_net) * repr_net
+      idxs = random.permutation(nj.rng(), self.config.batch_size)
+      nrepr_dist = jnp.mean(jnp.abs(new_repr - sg(new_repr[idxs])), axis=-1)
+      reward = df(data['reward'])
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      ract = jax.random.uniform(key, shape=prev_actions.shape, minval=-1.0, maxval=1.0)
-      rand_repr = self.act(ract) * repr_transform
-      rand_repr_dist = jnp.mean(jnp.abs(rand_repr - sg(rand_repr[idxs])), axis=-1)
-      _, nprior = self.rssm.observe(embed, ract, jnp.zeros_like(data['is_first']), prev_latent)
-      mean = self.rssm.get_dist(sg(nprior), idxs, get_mean=True)
-      t_dist = 0.5 * self.rssm.get_dist(sg(nprior)).kl_divergence(mean) + \
-               0.5 * self.rssm.get_dist(sg(nprior), idxs).kl_divergence(mean)
-      bisim = r_dist + self.config.enc_loss.disc * t_dist
-      losses['enc'] = jnp.mean(jnp.square(rand_repr_dist - bisim))
+      ract = random.uniform(random.PRNGKey(0), (NUM_SAMPLES, *dl(data['action']).shape), minval=-1.0, maxval=1.0)
+      rand_repr = self.act(ract) * repr_net
+      new_embed = jnp.concatenate([jnp.tile(jnp.expand_dims(embed[:, 0], 0), (NUM_SAMPLES, 1, 1))[:, :, None], rand_repr], 2)
+      new_act = jnp.concatenate([jnp.tile(jnp.expand_dims(prev_action, 0), (NUM_SAMPLES, 1, 1))[:, :, None], ract], 2)
+      cum_loss = []
+      for i in range(NUM_SAMPLES):
+        npost, nprior = self.rssm.observe(sg(new_embed[i]), sg(new_act[i]), data['is_first'], prev_latent)
+        nfeats = {**npost, 'embed': new_embed}
+        mean = self.rssm.get_dist(sg(nprior), idxs, get_mean=True)
+        t_dist = 0.5 * self.rssm.get_dist(sg(nprior)).kl_divergence(mean) + \
+                0.5 * self.rssm.get_dist(sg(nprior), idxs).kl_divergence(mean)
+        cum_loss.append(t_dist)
+      bisim = r_dist + self.config.enc_loss.disc * df(jnp.mean(jnp.stack(cum_loss), 0))
+      losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
 
     elif self.enc_loss == 'bisim':
-      idxs = jax.random.permutation(key, self.config.batch_size)
+      idxs = jax.random.permutation(nj.rng(), self.config.batch_size)
       z_dist = jnp.mean(jnp.abs(embed - embed[idxs]), axis=-1)
       r_dist = jnp.abs(data['reward'] - sg(data['reward'][idxs])) 
       if self.rssm._classes:
