@@ -117,9 +117,12 @@ class RandomNoise(ImageSource):
     self.build_arr()
 
   def build_arr(self):
-    self.arr = cycle(self.rand_gen.integers(
+    self.backgr = cycle(self.rand_gen.integers(
+      0, 256, (self.total_frames, *self.shape, self.channels), dtype=np.uint8
+    ))
+    self.grid = cycle(self.rand_gen.integers(
       0, 256, (self.total_frames, *self.shape, self.channels), dtype=np.uint8
     ))
 
-  def get_image(self):
-    return next(self.arr)
+  def get_images(self):
+    return next(self.backgr), next(self.grid)
