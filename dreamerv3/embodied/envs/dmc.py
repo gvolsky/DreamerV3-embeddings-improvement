@@ -47,6 +47,8 @@ class DMC(embodied.Env):
     else:
       self._bg = None
 
+    domain, task = env.split('_', 1)
+
     if self._bg:
       from dm_control.utils import io as resources
       import dm_control.suite
@@ -62,11 +64,13 @@ class DMC(embodied.Env):
         return resources.GetResource(model_filename)
       def get_model_and_assets():
         """Returns a tuple containing the model XML string and a dict of assets."""
-        return read_model(os.path.join(_SUITE_DIR, "dreamerv3/embodied/envs/dmc_xml/walker.xml")), ASSETS
-      dm_control.suite.walker.get_model_and_assets = get_model_and_assets
+        return read_model(os.path.join(_SUITE_DIR, f"dreamerv3/embodied/envs/dmc_xml/{domain}.xml")), ASSETS
+      if domain == 'walker':
+        dm_control.suite.walker.get_model_and_assets = get_model_and_assets
+      elif domain == 'reacher':
+        dm_control.suite.reacher.get_model_and_assets = get_model_and_assets
     
     if isinstance(env, str):
-      domain, task = env.split('_', 1)
       if camera == -1:
         camera = self.DEFAULT_CAMERAS.get(domain, 0)
       if domain == 'cup':  # Only domain with multiple words.
@@ -115,6 +119,7 @@ class DMC(embodied.Env):
   def render(self):
     img = self._dmenv.physics.render(*self._size, camera_id=self._camera)
     if self._bg is not None:
+      pass
       mask1, mask2 = np.all(img == 255, axis=-1), np.all(img == 0, axis=-1)
       bg, grid = self._bg.get_images()
       img[mask1], img[mask2] = bg[mask1], grid[mask2]
