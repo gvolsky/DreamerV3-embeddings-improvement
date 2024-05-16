@@ -204,14 +204,17 @@ class WorldModel(nj.Module):
       losses['enc'] = jnp.mean(jnp.square(nrepr_dist - bisim))
 
     elif self.enc_loss == 'bisim2':
-      key = random.PRNGKey(0)
-      idxs = random.permutation(key, self.config.batch_size)
-      nrepr_dist = jnp.mean(jnp.abs(repr_out - repr_out[idxs]), axis=-1)
-      reward = dl(data['reward'])
+      act_transform = self.act(prev_actions[:, :-1])
+      repr_transform = self.repr(embed[:, :-1])
+      new_repr = act_transform * repr_transform
+      losses['rpred'] = jnp.mean(jnp.abs(new_repr - sg(embed)[:, 1:]))
+      key = nj.rng()
+      idxs = jax.random.permutation(key, self.config.batch_size)
+      nrepr_dist = jnp.mean(jnp.abs(new_repr - new_repr[idxs]), axis=-1)
+      reward = data['reward'][:, :-1]
       r_dist = jnp.abs(reward - sg(reward[idxs])) 
-      act = random.uniform(key, dl(data['action']).shape)
-      act = self.act(act)
-      nnrepr_transform = self.repr(df(embed))
+      act = self.act(jax.random.uniform(key, shape=prev_actions[:, :-1].shape))
+      nnrepr_transform = self.repr(embed[:, 1:])
       nnrepr1, nnrepr2 = sg(nnrepr_transform * act), sg(nnrepr_transform[idxs] * act)
       nnrepr_dist = jnp.mean(jnp.abs(nnrepr1 - nnrepr2), axis=-1)
       bisim = r_dist + self.config.enc_loss.disc * nnrepr_dist

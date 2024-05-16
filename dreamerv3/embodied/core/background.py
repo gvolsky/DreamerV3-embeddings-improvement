@@ -93,14 +93,21 @@ class RandomPickleSource(ImageSource):
     print(f"BACKGR SEED: {seed}")
     self.rand_gen = random.Random(seed)
     self.build_arr()
-
+  
+  def build_frames(self):
+    frames = []
+    while len(frames) == 0:
+      fname = self.rand_gen.choice(self.filelist)
+      with open(fname, 'rb') as f:
+        frames = pickle.load(f)
+    return cycle(frames)
+  
   def build_arr(self):
-    fname = self.rand_gen.choice(self.filelist)
-    with open(fname, 'rb') as f:
-      self.arr = cycle(pickle.load(f))
+    self.backgr = self.build_frames()
+    self.grid = self.build_frames()
 
-  def get_image(self):
-    return next(self.arr)
+  def get_images(self):
+    return next(self.backgr), next(self.grid)
   
   
 class RandomNoise(ImageSource):
