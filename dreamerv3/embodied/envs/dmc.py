@@ -69,6 +69,8 @@ class DMC(embodied.Env):
         dm_control.suite.walker.get_model_and_assets = get_model_and_assets
       elif domain == 'reacher':
         dm_control.suite.reacher.get_model_and_assets = get_model_and_assets
+      elif domain == 'finger':
+        dm_control.suite.finger.get_model_and_assets = get_model_and_assets
     
     if isinstance(env, str):
       if camera == -1:
@@ -119,7 +121,6 @@ class DMC(embodied.Env):
   def render(self):
     img = self._dmenv.physics.render(*self._size, camera_id=self._camera)
     if self._bg is not None:
-      pass
       mask1, mask2 = np.all(img == 255, axis=-1), np.all(img == 0, axis=-1)
       bg, grid = self._bg.get_images()
       img[mask1], img[mask2] = bg[mask1], grid[mask2]
