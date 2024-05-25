@@ -91,7 +91,9 @@ def main(argv=None):
           agent, env, replay, eval_replay, logger, args)
 
     elif args.script == 'eval_only':
-      env = make_envs(config)  # mode='eval'
+      env = make_envs(
+        config, seeds_eval, back_type=config['back_type'], back_path=config['back_eval']
+      )  # mode='eval'
       cleanup.append(env)
       agent = agt.Agent(env.obs_space, env.act_space, step, config)
       embodied.run.eval_only(agent, env, logger, args)

@@ -21,11 +21,14 @@ def eval_only(agent, env, logger, args):
   timer.wrap('logger', logger, ['write'])
 
   nonzeros = set()
-  def per_episode(ep):
+  def per_episode(ep, mode, episode=None):
     length = len(ep['reward']) - 1
     score = float(ep['reward'].astype(np.float64).sum())
-    logger.add({'length': length, 'score': score}, prefix='episode')
-    print(f'Episode has {length} steps and return {score:.1f}.')
+    logger.add(
+      {'length': length, 'score': score}, 
+      prefix=('episode' if mode == 'train' else f'{mode}_{episode}_episode')
+    )
+    print(f'{mode} {episode} episode has {length} steps and return {score:.1f}.')
     stats = {}
     for key in args.log_keys_video:
       if key in ep:
@@ -43,7 +46,7 @@ def eval_only(agent, env, logger, args):
     metrics.add(stats, prefix='stats')
 
   driver = embodied.Driver(env)
-  driver.on_episode(lambda ep, worker: per_episode(ep))
+  driver.on_episode(lambda ep, worker, episode: per_episode(ep, episode=episode, mode='eval'))
   driver.on_step(lambda tran, _: step.increment())
 
   checkpoint = embodied.Checkpoint()
@@ -53,7 +56,7 @@ def eval_only(agent, env, logger, args):
   print('Start evaluation loop.')
   policy = lambda *args: agent.policy(*args, mode='eval')
   while step < args.steps:
-    driver(policy, steps=100)
+    driver(policy, episodes=args.eval_eps)
     if should_log(step):
       logger.add(metrics.result())
       logger.add(timer.stats(), prefix='timer')
