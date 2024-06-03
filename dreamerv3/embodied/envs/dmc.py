@@ -71,6 +71,10 @@ class DMC(embodied.Env):
         dm_control.suite.reacher.get_model_and_assets = get_model_and_assets
       elif domain == 'finger':
         dm_control.suite.finger.get_model_and_assets = get_model_and_assets
+      elif domain == 'fish':
+        dm_control.suite.fish.get_model_and_assets = get_model_and_assets
+      elif domain == 'humanoid':
+        dm_control.suite.humanoid.get_model_and_assets = get_model_and_assets
     
     if isinstance(env, str):
       if camera == -1:
